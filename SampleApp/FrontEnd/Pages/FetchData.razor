@@ -27,10 +27,19 @@ else
     </div>
 
     <h4>Upload statement CSV</h4>
-    <InputFile OnChange="UploadCsvAsync" accept=".csv,text/csv" />
+    <InputFile OnChange="UploadCsvAsync" accept=".csv,text/csv" multiple />
     @if (!string.IsNullOrWhiteSpace(uploadMessage))
     {
         <p class="mt-2">@uploadMessage</p>
+    }
+    @if (uploadErrors.Count > 0)
+    {
+        <div class="mt-2 text-danger">
+            @foreach (var error in uploadErrors)
+            {
+                <div>❌ @error.FileName: @error.ErrorMessage</div>
+            }
+        </div>
     }
 
     <div class="mt-3">
@@ -94,6 +103,7 @@ else
     private string? searchTerm;
     private bool isBusy;
     private List<BudgetTransaction> transactions = [];
+    private List<FileError> uploadErrors = [];
 
     private IReadOnlyList<BudgetTransaction> FilteredTransactions =>
         string.IsNullOrWhiteSpace(searchTerm)
@@ -134,6 +144,7 @@ else
         searchTerm = null;
         transactions = [];
         uploadMessage = null;
+        uploadErrors = [];
         errorMessage = null;
     }
 
@@ -147,17 +158,52 @@ else
 
         errorMessage = null;
         uploadMessage = null;
+        uploadErrors = [];
         isBusy = true;
+
+        var files = e.GetMultipleFiles(int.MaxValue);
+        var totalTransactions = 0;
+        var successfulFiles = 0;
+        var failedFiles = 0;
 
         try
         {
-            var file = e.File;
-            var importedCount = await BudgetClient.UploadStatementAsync(currentUser, file);
-            uploadMessage = $"Imported {importedCount} transactions from {file.Name}.";
+            uploadMessage = "Uploading...";
+            StateHasChanged();
+
+            foreach (var file in files)
+            {
+                try
+                {
+                    var importedCount = await BudgetClient.UploadStatementAsync(currentUser, file);
+                    totalTransactions += importedCount;
+                    successfulFiles++;
+                }
+                catch (Exception ex)
+                {
+                    failedFiles++;
+                    uploadErrors.Add(new FileError(file.Name, ex.Message));
+                }
+            }
+
             await LoadTransactionsAsync();
+
+            // Build success message
+            if (failedFiles == 0)
+            {
+                uploadMessage = files.Count() == 1
+                    ? $"Imported {totalTransactions} transactions from {files.First().Name}."
+                    : $"Imported {totalTransactions} transactions from {successfulFiles} files.";
+            }
+            else
+            {
+                uploadMessage = $"Imported {totalTransactions} transactions from {successfulFiles} files ({failedFiles} files failed).";
+            }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            errorMessage = ex.Message;
+            uploadMessage = null;
         }
         finally
         {
@@ -175,6 +221,7 @@ else
 
         errorMessage = null;
         uploadMessage = null;
+        uploadErrors = [];
         isBusy = true;
 
         try
@@ -217,4 +264,6 @@ else
             || transaction.Category.Contains(term, StringComparison.OrdinalIgnoreCase)
             || transaction.Amount.ToString().Contains(term, StringComparison.OrdinalIgnoreCase);
     }
+
+    private record FileError(string FileName, string ErrorMessage);
 }

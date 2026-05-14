@@ -122,16 +122,10 @@ static List<TransactionRecord> ParseTransactions(Stream csvStream)
     }
 
     var transactions = new List<TransactionRecord>();
-    var rowNumber = 1;
     while (!reader.EndOfStream)
     {
         var line = reader.ReadLine();
         if (string.IsNullOrWhiteSpace(line))
-        {
-            continue;
-        }
-
-        if (rowNumber++ <= 1)
         {
             continue;
         }
